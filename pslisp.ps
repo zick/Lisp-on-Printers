@@ -1,0 +1,1276 @@
+%!
+
+%%% Variables and Constants
+
+/input_string ((cdr '(Please (write (your favorite program) here!)))) def
+/input_string ((begin (define *environment* nil) (define assoc (lambda (key lst) (cond ((eq? lst nil) nil) ((eq? key (car (car lst))) (car lst)) (#t (assoc key (cdr lst)))))) (define ps_eval (lambda (e stack) (cond ((eq? e 'add) (cons (compute + stack) (cdr (cdr stack)))) ((eq? e 'sub) (cons (compute - stack) (cdr (cdr stack)))) ((eq? e 'mul) (cons (compute * stack) (cdr (cdr stack)))) ((eq? e 'div) (cons (compute / stack) (cdr (cdr stack)))) ((eq? e 'eq) (cond ((compute = stack) (cons 'true (cdr (cdr stack)))) (#t (cons 'false (cdr (cdr stack)))))) ((eq? e 'dup) (cons (car stack) stack)) ((eq? e 'exch) (cons (car (cdr stack)) (cons (car stack) (cdr (cdr stack))))) ((eq? e 'pop) (cdr stack)) ((eq? e 'if) (cond ((eq? (car (cdr stack)) 'true) (ps_eval_seq (car stack) (cdr (cdr stack)))) (#t (cdr (cdr stack))))) ((eq? e 'ifelse) (cond ((eq? (car (cdr (cdr stack))) 'true) (ps_eval_seq (car (cdr stack)) (cdr (cdr (cdr stack))))) (#t (ps_eval_seq (car stack) (cdr (cdr (cdr stack))))))) ((eq? e 'def) (set! *environment* (cons (cons (car (cdr stack)) (car stack)) *environment*)) (cdr (cdr stack))) ((symbol? e) (cond ((eq? (subsym e 0 1) '/) (cons (subsym e 1 0) stack)) (#t (eval_var e stack)))) (#t (cons e stack))))) (define look-up-var (lambda (var) (cdr (assoc var *environment*)))) (define eval_var (lambda (e stack) ((lambda (val) (cond ((eq? val nil) stack) ((eq? (atom? val) #f) (ps_eval_seq val stack)) (#t (cons val stack)))) (look-up-var e)))) (define compute (lambda (fn stack) (fn (car (cdr stack)) (car stack)))) (define postscript (lambda (e) (ps_eval_loop e nil))) (define mark (lambda (e stack) (cond ((eq? (car e) '}) (mark_end (cdr e) stack)) ((eq? (car e) '{) ((lambda (e-stack) (mark (car e-stack) (cdr e-stack))) (mark (cdr e) (cons '{ stack)))) (#t (mark (cdr e) (cons (car e) stack)))))) (define mark_end (lambda (e stack) (mark_end1 e stack nil))) (define mark_end1 (lambda (e stack acc) (cond ((eq? (car stack) '{) (cons e (cons acc (cdr stack)))) (#t (mark_end1 e (cdr stack) (cons (car stack) acc)))))) (define ps_eval_loop (lambda (e stack) (car (ps_eval_seq e stack)))) (define ps_eval_seq (lambda (e stack) (cond ((eq? e nil) stack) ((eq? (car e) '{) ((lambda (e-stack) (ps_eval_seq (car e-stack) (cdr e-stack))) (mark (cdr e) (cons '{ stack)))) (#t (ps_eval_seq (cdr e) (ps_eval (car e) stack)))))) (postscript '( /fact { dup 0 eq { pop 1 } { dup 1 sub fact mul } ifelse } def 10 fact ) ) )) def
+
+/buf 256 string def
+
+/symbol_set 1000 array def
+symbol_set 0 0 put
+
+/TAG_CONS 0 def
+/TAG_NUM 1 def
+/TAG_SYMBOL 2 def
+/TAG_SUBR 3 def
+/TAG_FSUBR 4 def
+/TAG_EXPR 5 def
+/CONS_W 50 def
+/CONS_H 25 def
+/ARROW_LENGTH 30 def
+/DOT_RADIUS 3 def
+/MARGINE 2 def
+
+/FONT_SIZE 20 def
+/SECOND_DOT_X CONS_W 3 mul 4 div def
+/FIRST_DOT_X CONS_W 4 div def
+/DEFAULT_WIDTH SECOND_DOT_X ARROW_LENGTH add MARGINE add def
+/DOT_Y CONS_H 2 div -1 mul def %alert! : DOT_Y < 0
+/DEFAULT_HEIGHT ARROW_LENGTH MARGINE add CONS_H 2 div add def
+/PAGE_MARGINE 40 def
+/STRING_MARGINE 10 def
+
+
+%%% Drawing procedures
+
+% array number number => _
+/DrawLObject
+{
+  DrawElement
+  pop
+}def
+
+% array number number => number
+/DrawElement
+{
+  3 dict begin
+    /tmp_y exch def
+    /tmp_x exch def
+    /tmp_c exch def
+    {  % loop for switch-case
+      tmp_c 0 get
+      dup TAG_NUM eq
+      {
+        pop
+        tmp_c tmp_x 5 add tmp_y DrawNumAndWidth
+        dup DEFAULT_WIDTH lt
+        {
+          pop DEFAULT_WIDTH
+        }if
+        exit
+      }if
+      dup TAG_SYMBOL eq
+      {
+        pop
+        tmp_c tmp_x 5 add tmp_y DrawSymbolAndWidth
+        dup DEFAULT_WIDTH lt
+        {
+          pop DEFAULT_WIDTH
+        }if
+        exit
+      }if
+      dup TAG_CONS eq
+      {
+        pop
+        tmp_c tmp_x tmp_y DrawConsAndWidth
+        exit
+      }if
+      pop
+      (object) StringToSymbol tmp_x tmp_y DrawSymbol
+      CONS_W
+      exit
+    }loop
+  end
+}def
+
+% array number number => number
+/DrawConsAndWidth
+{
+  4 dict begin
+    /tmp_y exch def
+    /tmp_x exch def
+    /tmp_c exch def
+    /tmp_r 0 def
+    tmp_c CDR nil eq
+    {
+      tmp_x tmp_y DrawDADotNILCons
+      tmp_c CAR tmp_x tmp_y DEFAULT_HEIGHT sub DrawElement
+    }
+    {
+      tmp_x tmp_y DrawDADotCons
+      tmp_c CAR tmp_x tmp_y DEFAULT_HEIGHT sub DrawElement
+      /tmp_r exch def %tmp_r = width of element of CAR
+      tmp_x SECOND_DOT_X add tmp_y DOT_Y add tmp_r SECOND_DOT_X sub DrawRArrow
+      /tmp_r tmp_r MARGINE add def %tmp_r = start x of element of CDR
+      tmp_c CDR tmp_r tmp_x add tmp_y DrawElement
+      tmp_r add
+    }ifelse
+  end
+}def
+
+% array number number => number
+/DrawNumAndWidth
+{
+  FONT_SIZE sub moveto
+  /Times-Roman findfont
+  FONT_SIZE scalefont setfont
+  GetNum buf cvs dup show
+  stringwidth pop STRING_MARGINE add
+}def
+
+% array number number => number
+/DrawSymbolAndWidth
+{
+  FONT_SIZE sub moveto
+  /Times-Roman findfont
+  FONT_SIZE scalefont setfont
+  GetSymbol buf cvs dup show
+  stringwidth pop STRING_MARGINE add
+}def
+
+% number number => _
+/DrawDADotCons %DA = Down Arrow
+{
+  2 dict begin
+    /tmp_y exch def
+    /tmp_x exch def
+    tmp_x tmp_y DrawConsFrame
+    tmp_x FIRST_DOT_X add tmp_y DOT_Y add DrawDot
+    tmp_x SECOND_DOT_X add tmp_y DOT_Y add DrawDot
+    tmp_x FIRST_DOT_X add tmp_y DOT_Y add ARROW_LENGTH DrawDArrow
+  end
+}def
+
+% number number => _
+/DrawDADotNILCons
+{
+  2 dict begin
+    /tmp_y exch def
+    /tmp_x exch def
+    tmp_x tmp_y DrawConsFrame
+    tmp_x FIRST_DOT_X add tmp_y DOT_Y add DrawDot
+    tmp_x FIRST_DOT_X add tmp_y DOT_Y add ARROW_LENGTH DrawDArrow
+    tmp_x CONS_W 2 div add tmp_y CONS_H sub moveto
+    CONS_W 2 div CONS_H rlineto
+    stroke
+  end
+}def
+
+% number number => _
+/DrawConsFrame
+{
+  2 dict begin
+    /tmp_y exch def
+    /tmp_x exch def
+    newpath
+    tmp_x tmp_y moveto
+    CONS_W 0 rlineto
+    0 CONS_H -1 mul rlineto
+    -1 CONS_W mul 0 rlineto
+    closepath
+    2 setlinewidth
+    stroke
+    newpath
+    tmp_x CONS_W 2 div add tmp_y moveto
+    0 CONS_H -1 mul rlineto
+    stroke
+  end
+}def
+
+% number number => _
+/DrawDot
+{
+  DOT_RADIUS 0 360 arc fill
+}def
+
+%number number number => _
+/DrawRArrow
+{
+  3 dict begin
+    /tmp_r exch def
+    /tmp_y exch def
+    /tmp_x exch def
+    2 setlinewidth
+    tmp_x tmp_y moveto
+    tmp_r 3 sub 0 rlineto
+    stroke
+    newpath
+    tmp_x tmp_r add tmp_y moveto
+    -9 -6 rlineto
+    0 12 rlineto
+    closepath
+    fill
+  end
+}def
+
+%number number number => _
+/DrawDArrow
+{
+  3 dict begin
+    /tmp_r exch def
+    /tmp_y exch def
+    /tmp_x exch def
+    2 setlinewidth
+    tmp_x tmp_y moveto
+    0 tmp_r 3 sub -1 mul rlineto
+    stroke
+    newpath
+    tmp_x tmp_y tmp_r sub moveto
+    -6 9 rlineto
+    12 0 rlineto
+    closepath
+    fill
+  end
+}def
+
+%array => number
+/LObjectHeight
+{
+  2 dict begin
+    /car_height 0 def
+    /cdr_height 0 def
+    {
+      dup GetTAG TAG_CONS eq
+      {
+        dup CAR LObjectHeight DEFAULT_HEIGHT add /car_height exch def
+        CDR LObjectHeight /cdr_height exch def
+        car_height cdr_height gt
+        {
+          car_height
+        }
+        {
+          cdr_height
+        }ifelse
+        exit
+      }
+      {
+        pop
+        FONT_SIZE exit
+      }ifelse
+    }loop
+  end
+}def
+
+
+%%% Procedures for the Lisp interpreter
+
+% _ => array
+/CreateCons
+{
+  3 array dup
+  0 TAG_CONS put
+}def
+
+% _ => array
+/CreateNum
+{
+  2 array dup
+  0 TAG_NUM put
+}def
+
+% _ => array
+/CreateSymbol
+{
+  2 array dup
+  0 TAG_SYMBOL put
+}def
+
+% array value => _
+/SetCAR
+{
+  1 exch put
+}def
+
+% array value => _
+/SetCDR
+{
+  2 exch put
+}def
+
+% array number => _
+/SetNum
+{
+  1 exch put
+}def
+
+% array number => array
+/SetNum2
+{
+  1 dict begin
+    exch dup
+    /tmp exch def
+    exch SetNum
+    tmp
+  end
+}def
+
+% array string => _
+/SetSymbol
+{
+  1 exch put
+}def
+
+% array string => _
+/SetSymbol2
+{
+  1 dict begin
+    exch dup
+    /tmp exch def
+    exch SetSymbol
+    tmp
+  end
+}def
+
+% array => number
+/GetTAG
+{
+  0 get
+}def
+
+% array => value
+/CAR
+{
+  dup nil eq
+  {
+    pop nil
+  }
+  {
+    1 get
+  }ifelse
+}def
+
+% array => value
+/CDR
+{
+  dup nil eq
+  {
+    pop nil
+  }
+  {
+    2 get
+  }ifelse
+}def
+
+% array => value
+/GetNum
+{
+  1 get
+}def
+
+% array => value
+/GetSymbol
+{
+  1 get
+}def
+
+% _ => array
+/CreateSUBR
+{
+  2 array
+  dup 0 TAG_SUBR put
+}def
+
+% _ => array
+/CreateFSUBR
+{
+  2 array
+  dup 0 TAG_FSUBR put
+}def
+
+% array => _
+/SetSUBR
+{
+  1 exch put
+}def
+
+% array => _
+/SetFSUBR
+{
+  1 exch put
+}def
+
+% array => value
+/GetSUBR
+{
+  1 get
+}def
+
+% array => value
+/GetFSUBR
+{
+  1 get
+}def
+
+% array array array => array
+/FormToEXPR
+{
+  2 dict begin
+    /tmp_ret CreateCons def
+    /tmp CreateCons def
+    tmp_ret exch SetCAR
+    tmp_ret tmp SetCDR
+    tmp exch SetCAR
+    tmp exch SetCDR
+    tmp_ret dup 0 TAG_EXPR put
+  end
+}def
+
+% procedure => array
+/ProcedureToSUBR
+{
+  1 dict begin
+    /tmp_ret CreateSUBR def
+    tmp_ret exch SetSUBR
+    tmp_ret
+  end
+}def
+
+% procedure => array
+/ProcedureToFSUBR
+{
+  1 dict begin
+    /tmp_ret CreateFSUBR def
+    tmp_ret exch SetFSUBR
+    tmp_ret
+  end
+}def
+
+% string => array
+/StringToSymbol
+{
+  1 dict begin
+    /tmp_string exch def
+    1
+    {
+      dup symbol_set 0 get gt
+      {
+        pop
+        CreateSymbol
+        dup tmp_string SetSymbol
+        [-1]
+        exit
+      }if
+      dup symbol_set exch get GetSymbol
+      tmp_string eq
+      {
+        symbol_set exch get
+        exit
+      }if
+      1 add
+    }loop
+  end
+  dup GetTAG -1 eq
+  {
+    pop
+    dup
+    symbol_set exch symbol_set 0 get 1 add exch put
+    symbol_set 0 symbol_set 0 get 1 add put
+  }if
+}def
+
+% array => _
+/WriteLObject
+{
+  dup
+  GetTAG TAG_NUM eq
+  {
+    GetNum buf cvs show
+  }
+  {
+    dup
+    GetTAG TAG_SYMBOL eq
+    {
+      GetSymbol buf cvs show
+    }
+    {
+      dup
+      GetTAG TAG_CONS eq
+      {
+        WriteList
+      }
+      {
+        pop (object) buf cvs show
+      }ifelse
+    }ifelse
+  }ifelse
+}def
+
+% array => _
+/WriteList
+{
+  (\() show
+  {
+    dup
+    CAR WriteLObject
+    dup
+    CDR GetTAG TAG_CONS ne
+    {
+      dup CDR nil eq
+      {
+        pop
+        (\)) show
+        exit
+      }if
+      ( . ) show
+      CDR WriteLObject
+      (\)) show
+      exit
+    }
+    {
+    }ifelse
+    ( ) show
+    CDR
+  }loop
+}def
+
+% string => string string
+/NextToken
+{
+  2 dict begin
+    /tmp_string exch def
+    /tmp_ret () def
+    0
+    {  % remove space
+      dup tmp_string exch 1 getinterval ( ) ne
+      {
+        exit
+      }if
+      1 add
+    }loop
+    {  % loop for switch-case
+      dup tmp_string exch 1 getinterval (\() eq
+      {
+        tmp_string exch
+        1 add dup
+        tmp_string length
+        sub -1 mul
+        getinterval
+        (\()
+        exit
+      }if
+      dup tmp_string exch 1 getinterval (\)) eq
+      {
+        tmp_string exch
+        1 add dup
+        tmp_string length
+        sub -1 mul
+        getinterval
+        (\))
+        exit
+      }if
+      dup tmp_string exch 1 getinterval (') eq
+      {
+        tmp_string exch
+        1 add dup
+        tmp_string length
+        sub -1 mul
+        getinterval
+        (')
+        exit
+      }if
+      tmp_string
+      exch %for start
+      dup  %for count1
+      dup  %for count2
+      {
+        dup tmp_string exch 1 getinterval ( ) eq
+        {
+          dup  % for rest
+          tmp_string exch
+          dup
+          tmp_string length
+          sub -1 mul
+          getinterval
+          /tmp_ret exch def
+          sub -1 mul
+          getinterval
+          tmp_ret exch
+          exit
+        }if
+        dup tmp_string exch 1 getinterval (\() eq
+        {
+          dup  % for rest
+          tmp_string exch
+          dup
+          tmp_string length
+          sub -1 mul
+          getinterval
+          /tmp_ret exch def
+          sub -1 mul
+          getinterval
+          tmp_ret exch
+          exit
+        }if
+        dup tmp_string exch 1 getinterval (\)) eq
+        {
+          dup  % for rest
+          tmp_string exch
+          dup
+          tmp_string length
+          sub -1 mul
+          getinterval
+          /tmp_ret exch def
+          sub -1 mul
+          getinterval
+          tmp_ret exch
+          exit
+        }if
+        dup tmp_string exch 1 getinterval (') eq
+        {
+          dup  % for rest
+          tmp_string exch
+          dup
+          tmp_string length
+          sub -1 mul
+          getinterval
+          /tmp_ret exch def
+          sub -1 mul
+          getinterval
+          tmp_ret exch
+          exit
+        }if
+        1 add
+        dup tmp_string length eq
+        {
+          sub -1 mul
+          getinterval
+          () exch
+          exit
+        }if
+      }loop
+      exit
+    }loop  % loop for switch-case
+  end
+}def
+
+% string => boolean
+/IsNumber
+{
+  1 dict begin
+    /tmp_string exch def
+    {  % loop for beak
+      0  % counter
+      tmp_string 0 get 45 eq
+      { % x[0] == '-'
+        tmp_string length 1 eq
+        {
+          pop
+          false
+          exit
+        }
+        {
+          1 add
+        }ifelse
+      }if
+      {
+        dup tmp_string exch get
+        dup 48 lt
+        {  % x < '0'
+          pop pop
+          false
+          exit
+        }if
+        57 gt
+        {  % x > '9'
+          pop
+          false exit
+        }if
+        1 add
+        dup tmp_string length ge
+        {
+          pop
+          true
+          exit
+        }if
+      }loop
+      exit
+    }loop  %loop for switch-case
+  end
+}def
+
+% string => number
+/StringToNumber
+{
+  3 dict begin
+    /tmp_string exch def
+    /tmp_sign 1 def
+    /tmp_result 0 def
+    0  % counter
+    tmp_string 0 get 45 eq
+    { % x[0] == '-'
+      /tmp_sign -1 def
+      pop 1
+    }if
+    {
+      dup tmp_string length ge
+      {
+        pop
+        tmp_result
+        exit
+      }if
+      /tmp_result tmp_result 10 mul def
+      dup tmp_string exch get 48 sub
+      /tmp_result exch tmp_result add def
+      1 add
+    }loop
+    tmp_sign mul
+  end
+}def
+
+% string => array
+/StringToLObject
+{
+  StringToLObjectAndRest
+  exch pop
+}def
+
+% string => string array
+/StringToLObjectAndRest
+{
+  NextToken
+  {  % loop for switch-case
+    dup (\() eq
+    {
+      pop
+      StringToListAndRest
+      exit
+    }if
+    dup (\)) eq
+    {
+      pop pop
+      () nil
+      exit
+    }if
+    dup (') eq
+    {
+      2 dict begin
+        /ret CreateCons def
+        /tmp CreateCons def
+        ret quote SetCAR
+        ret tmp SetCDR
+        tmp nil SetCDR
+        pop
+        StringToLObjectAndRest
+        tmp exch SetCAR
+        ret
+      end
+      exit
+    }if
+    dup IsNumber
+    {
+      CreateNum
+      exch
+      StringToNumber
+      SetNum2
+      exit
+    }if
+    StringToSymbol
+    exit
+  }loop  % loop for switch-case
+}def
+
+% string => string array
+/StringToListAndRest
+{
+  5 dict begin
+    /tmp_string exch def
+    /tmp_result CreateCons def
+    /tmp_current tmp_result def
+    /tmp_token () def
+    /tmp [] def
+    tmp_string
+    {
+      NextToken /tmp_token exch def
+      tmp_token (\)) eq
+      {
+        tmp_current nil SetCDR
+        exit
+      }if
+      tmp_token (.) eq
+      {
+        StringToLObjectAndRest  %rest must be ) ...
+        exch NextToken pop exch
+        tmp_current exch SetCDR
+        exit
+      }if
+      pop  % rest
+      tmp_string StringToLObjectAndRest
+      /tmp CreateCons def
+      tmp exch SetCAR
+      tmp_current tmp SetCDR
+      /tmp_current tmp def
+      dup
+      /tmp_string exch def
+    }loop
+    tmp_result CDR
+  end
+}def
+
+/CreateNewEnv
+{
+  (\(\(dummy . dummy\)\)) StringToLObject
+}def
+
+% array array => array
+/CreateEXPREnv
+{
+  4 dict begin
+    /tmp_aarg exch def
+    dup
+    /tmp_farg exch CDR CAR def
+    /tmp_fenv exch CAR def
+    /tmp_ret CreateNewEnv def
+    {
+      tmp_farg nil eq
+      {
+        exit
+      }if
+      tmp_ret tmp_farg CAR tmp_aarg CAR Pair AddToEnv
+      /tmp_aarg tmp_aarg CDR def
+      /tmp_farg tmp_farg CDR def
+    }loop
+    tmp_ret tmp_fenv Nconc
+    tmp_ret
+  end
+}def
+
+% array array => _
+/Nconc
+{
+  exch
+  {
+    dup CDR nil eq{
+      exch SetCDR
+      exit
+    }if
+    CDR
+  }loop
+}def
+
+% array array => array
+/Assoc
+{
+  1 dict begin
+    exch
+    /tmp_key exch def
+    {
+      dup nil eq
+      {
+        pop nil
+        exit
+      }if
+      dup CAR CAR tmp_key eq
+      {
+        CAR
+        exit
+      }if
+      CDR
+    }loop
+  end
+}def
+
+% array array => array
+/Eval
+{
+  exch
+  {
+    dup GetTAG TAG_NUM eq
+    {
+      exch pop
+      exit
+    }if
+    dup GetTAG TAG_SYMBOL eq
+    {
+      exch Assoc CDR
+      exit
+    }if
+    dup GetTAG TAG_CONS eq
+    {
+      exch
+      1 dict begin
+        /env exch def
+        dup CAR env Eval
+        exch CDR env Apply
+      end
+      exit
+    }if
+    exch pop
+    exit
+  }loop
+}def
+
+% array array array => array
+/Apply
+{
+  5 dict begin
+    /tmp_env exch def
+    /tmp_args exch def
+    /tmp_fn exch def
+    /new_env nil def
+    /fn_tag 0 def
+    {  % loop for tail-recursion
+      /fn_tag tmp_fn GetTAG def
+      fn_tag TAG_SUBR eq
+      {
+        /tmp_args tmp_args tmp_env Evlis def
+        tmp_args
+        true tmp_fn GetSUBR if
+        exit
+      }if
+      fn_tag TAG_FSUBR eq
+      {
+        tmp_args tmp_env
+        true tmp_fn GetFSUBR if
+        dup tail_recursion eq
+        {
+          pop
+          dup CAR tmp_env Eval /tmp_fn exch def
+          CDR /tmp_args exch def
+        }
+        {
+          exit
+        }ifelse
+      }if
+      fn_tag TAG_EXPR eq
+      {
+        /tmp_args tmp_args tmp_env Evlis def
+        tmp_fn tmp_args CreateEXPREnv
+        dup /new_env exch def
+        tmp_fn CDR CDR exch LF_begin
+        dup tail_recursion eq
+        {
+          pop
+          dup CAR new_env Eval /tmp_fn exch def
+          CDR /tmp_args exch def
+          /tmp_env new_env def
+        }
+        {
+          exit
+        }ifelse
+      }if
+    }loop  % loop for tail-recursion
+  end
+}def
+
+% array array => array
+/Evlis
+{
+  5 dict begin
+    /tmp_env exch def
+    /tmp_ret CreateCons def
+    /tmp_current tmp_ret def
+    /tmp [] def
+    {
+      dup nil eq
+      {
+        pop
+        tmp_current nil SetCDR
+        exit
+      }if
+      /tmp CreateCons def
+      dup CAR tmp_env Eval
+      tmp exch SetCAR
+      tmp_current tmp SetCDR
+      /tmp_current tmp def
+      CDR
+    }loop
+    tmp_ret CDR
+  end
+}def
+
+% array array => _
+/AddToEnv
+{
+  exch
+  3 dict begin
+    /tmp_start exch def
+    /tmp_rest tmp_start CDR def
+    /tmp CreateCons def
+    tmp_start tmp SetCDR
+    tmp exch SetCAR
+    tmp tmp_rest SetCDR
+  end
+}def
+
+/Pair
+{
+  1 dict begin
+    /tmp_ret CreateCons def
+    tmp_ret exch SetCDR
+    tmp_ret exch SetCAR
+    tmp_ret
+  end
+}def
+
+
+%%% SUBRs and FSUBRs
+
+/LF_quote
+{
+  pop CAR
+}def
+
+/LF_car
+{
+  CAR CAR
+}def
+
+/LF_cdr
+{
+  CAR CDR
+}def
+
+/LF_cons
+{
+  dup CAR
+  exch CDR CAR
+  Pair
+}def
+
+/LF_atom
+{
+  CAR GetTAG TAG_CONS ne
+  {
+    sharp_t
+  }
+  {
+    sharp_f
+  }ifelse
+}def
+
+/LF_symbolp
+{
+  CAR GetTAG TAG_SYMBOL eq
+  {
+    sharp_t
+  }
+  {
+    sharp_f
+  }ifelse
+}def
+
+/LF_eq
+{
+  dup CAR
+  exch CDR CAR
+  eq
+  {
+    sharp_t
+  }
+  {
+    sharp_f
+  }ifelse
+}def
+
+/LF_lambda
+{
+  1 dict begin
+    /tmp_env exch def
+    dup CDR
+    exch CAR
+    tmp_env FormToEXPR
+  end
+}def
+
+/LF_begin
+{
+  1 dict begin
+    /tmp_env exch def
+    nil %initial value of result
+    {
+      exch dup nil eq
+      {
+        pop
+        exit
+      }if
+      dup dup CDR nil eq exch CAR GetTAG TAG_CONS eq and
+      {
+        exch pop
+        CAR tail_recursion
+        exit
+      }if
+      exch pop %remove last result
+      dup CDR
+      exch CAR tmp_env Eval
+    }loop
+  end
+}def
+
+/LF_cond
+{
+  1 dict begin
+    /tmp_env exch def
+    {
+      dup nil eq
+      {
+        nil
+        exit
+      }if
+
+      dup CAR CAR tmp_env Eval
+      sharp_f eq
+      {
+        CDR
+      }
+      {
+        CAR CDR tmp_env LF_begin
+        exit
+      }ifelse
+    }loop
+  end
+}def
+/LF_add
+{
+  dup CAR GetNum
+  exch CDR CAR GetNum
+  add CreateNum
+  exch SetNum2
+}def
+/LF_sub
+{
+  dup CAR GetNum
+  exch CDR CAR GetNum
+  sub CreateNum
+  exch SetNum2
+}def
+
+/LF_mul
+{
+  dup CAR GetNum
+  exch CDR CAR GetNum
+  mul CreateNum
+  exch SetNum2
+}def
+
+/LF_div
+{
+  dup CAR GetNum
+  exch CDR CAR GetNum
+  div CreateNum
+  exch SetNum2
+}def
+
+/LF_math_eq
+{
+  dup CAR GetNum
+  exch CDR CAR GetNum
+  eq
+  {
+    sharp_t
+  }
+  {
+    sharp_f
+  }ifelse
+}def
+
+/LF_define
+{
+  2 dict begin
+    /tmp_env exch def
+    /tmp_ret [] def
+    dup CDR CAR tmp_env Eval
+    exch CAR
+    dup /tmp_ret exch def
+    exch Pair tmp_env exch AddToEnv
+    tmp_ret
+  end
+}def
+
+/LF_set
+{
+  2 dict begin
+    /tmp_env exch def
+    dup CAR tmp_env Assoc
+    dup nil eq
+    {
+      pop pop
+      sharp_f
+    }
+    {
+      exch CDR CAR tmp_env Eval
+      SetCDR
+      sharp_t
+    }ifelse
+  end
+}def
+
+/LF_subsym
+{
+  3 dict begin
+    dup CAR GetSymbol /sym exch def
+    dup CDR CAR GetNum /index exch def
+    CDR CDR CAR GetNum /count exch def
+    count 0 eq
+    {
+      sym dup length index sub index exch getinterval
+    }
+    {
+      sym index count getinterval
+    }ifelse
+    StringToSymbol
+  end
+}def
+
+%  _ => _
+/SetGlobalEnv
+{
+  /global_env
+  (\(\(dummy . dummy\) \(nil . nil\) \(#t . #t\) \(#f . #f\)\))
+  StringToLObject
+  def
+  global_env (quote) StringToSymbol {LF_quote} ProcedureToFSUBR Pair AddToEnv
+  global_env (begin) StringToSymbol {LF_begin} ProcedureToFSUBR Pair AddToEnv
+  global_env (cond) StringToSymbol {LF_cond} ProcedureToFSUBR Pair AddToEnv
+  global_env (lambda) StringToSymbol {LF_lambda} ProcedureToFSUBR Pair AddToEnv
+  global_env (define) StringToSymbol {LF_define} ProcedureToFSUBR Pair AddToEnv
+  global_env (car) StringToSymbol {LF_car} ProcedureToSUBR Pair AddToEnv
+  global_env (cdr) StringToSymbol {LF_cdr} ProcedureToSUBR Pair AddToEnv
+  global_env (cons) StringToSymbol {LF_cons} ProcedureToSUBR Pair AddToEnv
+  global_env (atom?) StringToSymbol {LF_atom} ProcedureToSUBR Pair AddToEnv
+  global_env (eq?) StringToSymbol {LF_eq} ProcedureToSUBR Pair AddToEnv
+  global_env (symbol?)
+  StringToSymbol {LF_symbolp} ProcedureToSUBR Pair AddToEnv
+  global_env (+) StringToSymbol {LF_add} ProcedureToSUBR Pair AddToEnv
+  global_env (-) StringToSymbol {LF_sub} ProcedureToSUBR Pair AddToEnv
+  global_env (*) StringToSymbol {LF_mul} ProcedureToSUBR Pair AddToEnv
+  global_env (/) StringToSymbol {LF_div} ProcedureToSUBR Pair AddToEnv
+  global_env (=) StringToSymbol {LF_math_eq} ProcedureToSUBR Pair AddToEnv
+  global_env (subsym) StringToSymbol {LF_subsym} ProcedureToSUBR Pair AddToEnv
+  global_env (set!) StringToSymbol {LF_set} ProcedureToFSUBR Pair AddToEnv
+}def
+
+
+%%% Lisp symbols
+
+/nil (nil) StringToSymbol def
+/sharp_t (#t) StringToSymbol def
+/sharp_f (#f) StringToSymbol def
+/quote (quote) StringToSymbol def
+/tail_recursion (*((()))*) StringToSymbol def
+/global_env nil def
+
+
+%%% Read, eval and draw
+
+SetGlobalEnv
+gsave
+newpath
+
+input_string StringToLObject global_env Eval
+dup LObjectHeight
+1 dict begin
+  /height exch def
+  dup 60 height PAGE_MARGINE add DrawLObject
+  /Times-Roman findfont
+  20 scalefont setfont
+  60 height PAGE_MARGINE add 40 add moveto
+  (input : ) show
+  input_string show
+  60 height PAGE_MARGINE add 20 add moveto
+  (output: ) show
+  WriteLObject
+end
+
+showpage
+grestore
