@@ -76,9 +76,7 @@ symbol_set 0 0 put
         exit
       }if
       pop
-      (object) StringToSymbol tmp_x tmp_y DrawSymbol
-      CONS_W
-      exit
+      /tmp_c (object) StringToSymbol def  % retry
     }loop
   end
 }def
